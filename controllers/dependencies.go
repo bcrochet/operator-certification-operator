@@ -7,11 +7,13 @@ import (
 	"path/filepath"
 
 	"github.com/go-git/go-git/v5"
+	certv1alpha1 "github.com/redhat-openshift-ecosystem/operator-certification-operator/api/v1alpha1"
 	tekton "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	yamlutil "k8s.io/apimachinery/pkg/util/yaml"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -20,7 +22,7 @@ const (
 	TASK_MANIFESTS_PATH     = "ansible/roles/operator-pipeline/templates/openshift/tasks"
 )
 
-func (r *OperatorPipelineReconciler) reconcilePipelineDependencies(meta metav1.ObjectMeta) error {
+func (r *OperatorPipelineReconciler) reconcilePipelineDependencies(pipeline *certv1alpha1.OperatorPipeline) error {
 
 	// Cloning operator-pipelines project to retrieve pipelines and tasks
 	// yaml manifests that need to be applied beforehand
@@ -54,12 +56,12 @@ func (r *OperatorPipelineReconciler) reconcilePipelineDependencies(meta metav1.O
 
 				// apply pipeline yaml manifests
 				if path == PIPELINE_MANIFESTS_PATH {
-					if errs := r.applyPipelineManifests(filePath, meta); errs != nil {
+					if errs := r.applyPipelineManifests(filePath, pipeline); errs != nil {
 						return errs
 					}
 					// or apply tasks manifests
 				} else {
-					if errs := r.applyTaskManifests(filePath, meta); errs != nil {
+					if errs := r.applyTaskManifests(filePath, pipeline); errs != nil {
 						return errs
 					}
 				}
@@ -75,7 +77,7 @@ func (r *OperatorPipelineReconciler) reconcilePipelineDependencies(meta metav1.O
 	return nil
 }
 
-func (r *OperatorPipelineReconciler) applyPipelineManifests(fileName string, meta metav1.ObjectMeta) error {
+func (r *OperatorPipelineReconciler) applyPipelineManifests(fileName string, obj metav1.Object) error {
 
 	b, err := os.ReadFile(fileName)
 	if err != nil {
@@ -90,7 +92,7 @@ func (r *OperatorPipelineReconciler) applyPipelineManifests(fileName string, met
 		return err
 	}
 
-	pipeline.SetNamespace(meta.Namespace)
+	pipeline.SetNamespace(obj.GetNamespace())
 	err = r.Get(context.Background(), types.NamespacedName{Name: pipeline.Name, Namespace: pipeline.Namespace}, pipeline)
 
 	if len(pipeline.ObjectMeta.UID) > 0 {
@@ -110,11 +112,12 @@ func (r *OperatorPipelineReconciler) applyPipelineManifests(fileName string, met
 			return err
 		}
 	}
+	controllerutil.SetOwnerReference(obj, pipeline, r.Scheme)
 
 	return nil
 }
 
-func (r *OperatorPipelineReconciler) applyTaskManifests(fileName string, meta metav1.ObjectMeta) error {
+func (r *OperatorPipelineReconciler) applyTaskManifests(fileName string, obj metav1.Object) error {
 
 	b, err := os.ReadFile(fileName)
 	if err != nil {
@@ -129,7 +132,7 @@ func (r *OperatorPipelineReconciler) applyTaskManifests(fileName string, meta me
 		return err
 	}
 
-	task.SetNamespace(meta.Namespace)
+	task.SetNamespace(obj.GetNamespace())
 	err = r.Get(context.Background(), types.NamespacedName{Name: task.Name, Namespace: task.Namespace}, task)
 
 	if len(task.ObjectMeta.UID) > 0 {
@@ -149,6 +152,7 @@ func (r *OperatorPipelineReconciler) applyTaskManifests(fileName string, meta me
 			return err
 		}
 	}
+	controllerutil.SetOwnerReference(obj, task, r.Scheme)
 
 	return nil
 }
